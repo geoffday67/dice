@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <NimBLEDevice.h>
 
+#include "nvs.h"
 #include "nvs_flash.h"
 #include "sequence/dice.h"
 #include "sequence/timer.h"
@@ -16,10 +17,12 @@ enum TaskType_t {
 };
 
 TaskType_t TaskType;
+nvs_handle_t nvsHandle;
 
 class : public NimBLECharacteristicCallbacks {
   virtual void onWrite(NimBLECharacteristic *pCharacteristic) {
-    Serial.printf("New value: %s\n", pCharacteristic->getValue().c_str());
+    TaskType = (TaskType_t)(pCharacteristic->getValue<uint8_t>());
+    Serial.printf("Task type now %d\n", (int)TaskType);
   }
 } characteristicsCallbacks;
 
@@ -54,11 +57,15 @@ void setup() {
   Serial.println("Starting");
 
   nvs_flash_init();
+  nvs_open("dice", NVS_READWRITE, &nvsHandle);
   Serial.println("NVS initialised");
 
-  pinMode(TriggerPin, INPUT_PULLUP);
+  if (nvs_get_u8(nvsHandle, "task_type", (uint8_t*)&TaskType) != ESP_OK) {
+    TaskType = Dice;
+  }
+  Serial.printf ("Task type %d restored\n", (int)TaskType);
 
-  TaskType = Dice;
+  pinMode(TriggerPin, INPUT_PULLUP);
 
   NimBLEDevice::init("Dice");
   NimBLEServer *pServer = NimBLEDevice::createServer();
@@ -66,7 +73,7 @@ void setup() {
   NimBLECharacteristic *pCharacteristic = pService->createCharacteristic(CHARACTERISTIC_UUID);
 
   pService->start();
-  pCharacteristic->setValue("Geoff is great!");
+  pCharacteristic->setValue((int)TaskType);
   pCharacteristic->setCallbacks(&characteristicsCallbacks);
 
   NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
