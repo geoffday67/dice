@@ -13,7 +13,6 @@ import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.os.Build
 import android.os.ParcelUuid
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -28,11 +27,11 @@ class SettingsViewModel(
     val context: Context,
 ) : ViewModel() {
     var connecting by mutableStateOf(false)
+    var connected by mutableStateOf(false)
     val options = mutableStateListOf(
         Config.Dice, Config.Timer(3)
     )
-
-    val connected by derivedStateOf { diceGatt != null }
+    var currentOptionId: Int? by mutableStateOf(null)
 
     private val adapter = context.getSystemService(BluetoothManager::class.java).adapter
     private val scanResultHandler = ScanResultHandler()
@@ -41,8 +40,10 @@ class SettingsViewModel(
     private val gattHandler = object : BluetoothGattCallback() {
         override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray, status: Int) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                val result = value[0]
+                val result = value[0].toInt()
                 Timber.d("Characteristic value [$result]")
+                currentOptionId = result
+                connected = true
                 connecting = false
             }
         }
@@ -64,7 +65,7 @@ class SettingsViewModel(
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     Timber.d("GATT disconnected")
                     diceGatt = null
-                    //taskTypeCharacteristic = null
+                    connected = false
                     connecting = false
                 }
             }
@@ -77,7 +78,6 @@ class SettingsViewModel(
                 .firstOrNull { it.uuid == TASK_TYPE_UUID }
                 ?.let {
                     Timber.d("Task type characteristic discovered [${it.uuid}]")
-                    //taskTypeCharacteristic = it
                     gatt.readCharacteristic(it)
                 }
         }
@@ -111,11 +111,13 @@ class SettingsViewModel(
             val characteristic = service.getCharacteristic(TASK_TYPE_UUID)
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                it.writeCharacteristic(characteristic, ByteArray(1) { option.id }, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+                it.writeCharacteristic(characteristic, ByteArray(1) { option.id.toByte() }, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
             } else {
-                characteristic.setValue(ByteArray(1) { option.id })
+                characteristic.setValue(ByteArray(1) { option.id.toByte() })
                 it.writeCharacteristic(characteristic)
             }
+
+            currentOptionId = option.id
         }
     }
 

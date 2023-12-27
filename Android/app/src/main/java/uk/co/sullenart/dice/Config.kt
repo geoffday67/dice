@@ -1,7 +1,7 @@
 package uk.co.sullenart.dice
 
 sealed class Config(
-    val id: Byte,
+    val id: Int,
     val name: String,
 ) {
     object Dice: Config(0, "Dice")
