@@ -8,8 +8,5 @@ sealed class Config(
     data class Timer(
         val duration: Int,
     ): Config(1, "Timer")
+    object Coin: Config(2, "Coin")
 }
-
-data class SubConfig (
-    val name: String,
-)

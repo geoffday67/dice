@@ -40,8 +40,7 @@ class MainActivity : ComponentActivity() {
                         if (viewmodel.connected) {
                             SettingsScreen(
                                 options = viewmodel.options,
-                                currentOptionId = viewmodel.currentOptionId,
-                                onSelect = viewmodel::onSelect,
+                                onSave = viewmodel::onSave,
                             )
                         } else {
                             DisconnectedScreen(

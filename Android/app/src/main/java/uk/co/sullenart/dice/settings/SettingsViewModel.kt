@@ -29,9 +29,10 @@ class SettingsViewModel(
     var connecting by mutableStateOf(false)
     var connected by mutableStateOf(false)
     val options = mutableStateListOf(
-        Config.Dice, Config.Timer(3)
+        Config.Dice, Config.Timer(3), Config.Coin,
     )
     var currentOptionId: Int? by mutableStateOf(null)
+    var saveNeeded by mutableStateOf(false)
 
     private val adapter = context.getSystemService(BluetoothManager::class.java).adapter
     private val scanResultHandler = ScanResultHandler()
@@ -106,6 +107,9 @@ class SettingsViewModel(
     }
 
     fun onSelect(option: Config) {
+    }
+
+    fun onSave(option: Config) {
         diceGatt?.let {
             val service = it.getService(SERVICE_UUID)
             val characteristic = service.getCharacteristic(TASK_TYPE_UUID)
@@ -124,5 +128,6 @@ class SettingsViewModel(
     companion object {
         private val SERVICE_UUID = UUID.fromString("0220702e-0895-47cc-bb35-d2df06d17041")
         private val TASK_TYPE_UUID = UUID.fromString("bd37f3bf-8f79-42ba-8532-fbd0140c2790")
+        private val TIMER_DURATION_UUID = UUID.fromString("4a89e16b-c11a-471f-9b07-cfe736837e47")
     }
 }
