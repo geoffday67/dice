@@ -2,7 +2,7 @@
 
 class TimerSequence : public Sequence {
  public:
-  TimerSequence(TaskHandle_t);
+  TimerSequence(TaskHandle_t task, int duration);
   void start();
 
  private:

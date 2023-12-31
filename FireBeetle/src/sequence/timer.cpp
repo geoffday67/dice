@@ -2,9 +2,8 @@
 
 #include "freertos/task.h"
 
-TimerSequence::TimerSequence(TaskHandle_t task) : Sequence(task) {
-  duration = 3;
-  // TODO Get duration from current config (NVM?)
+TimerSequence::TimerSequence(TaskHandle_t task, int duration) : Sequence(task) {
+  this->duration = duration;
 }
 
 void TimerSequence::start() {
