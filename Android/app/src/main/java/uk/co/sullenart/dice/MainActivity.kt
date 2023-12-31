@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import uk.co.sullenart.dice.settings.ConnectionState
 import uk.co.sullenart.dice.settings.DisconnectedScreen
 import uk.co.sullenart.dice.settings.SettingsScreen
 import uk.co.sullenart.dice.settings.SettingsViewModel
@@ -29,7 +30,7 @@ class MainActivity : ComponentActivity() {
             val viewmodel: SettingsViewModel = remember { SettingsViewModel(this) }
             DiceTheme {
                 Scaffold(
-                    topBar = { TopBar(viewmodel.connected) }
+                    topBar = { TopBar(viewmodel.connectionState == ConnectionState.CONNECTED) }
                 ) {
                     Box(
                         modifier = Modifier
@@ -37,15 +38,15 @@ class MainActivity : ComponentActivity() {
                             .padding(it)
                             .padding(top = 12.dp),
                     ) {
-                        if (viewmodel.connected) {
+                        if (viewmodel.connectionState == ConnectionState.CONNECTED) {
                             SettingsScreen(
                                 options = viewmodel.options,
                                 onSave = viewmodel::onSave,
                             )
                         } else {
                             DisconnectedScreen(
-                                scan = viewmodel::scan,
-                                connecting = viewmodel.connecting,
+                                scan = viewmodel::connect,
+                                connecting = viewmodel.connectionState == ConnectionState.CONNECTING,
                             )
                         }
                     }
