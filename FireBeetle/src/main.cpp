@@ -1,13 +1,15 @@
 #include <Arduino.h>
 #include <NimBLEDevice.h>
+#include <SPI.h>
 
 #include "nvs.h"
 #include "nvs_flash.h"
+#include "output.h"
 #include "sequence/coin.h"
 #include "sequence/dice.h"
 #include "sequence/timer.h"
 
-const int TriggerPin = 22;
+const int TriggerPin = 23;
 
 const char SERVICE_UUID[] = "0220702e-0895-47cc-bb35-d2df06d17041";
 const char TASK_TYPE_UUID[] = "bd37f3bf-8f79-42ba-8532-fbd0140c2790";
@@ -23,10 +25,21 @@ TaskType_t TaskType;
 uint16_t TimerDuration;
 nvs_handle_t nvsHandle;
 
+void showIdle() {
+  Output.setFont(DICE);
+  Output.drawCentre('I');
+}
+
 class : public NimBLECharacteristicCallbacks {
   virtual void onWrite(NimBLECharacteristic *pcharacteristic) {
     TaskType = (TaskType_t)(pcharacteristic->getValue<uint8_t>());
     nvs_set_u8(nvsHandle, "task_type", (uint8_t)TaskType);
+
+    Output.setFont(DICE);
+    Output.drawCentre('A');
+    vTaskDelay(500);
+    showIdle();
+
     Serial.printf("Task type now %d\n", (int)TaskType);
   }
 } TaskTypeCallbacks;
@@ -42,29 +55,6 @@ class : public NimBLECharacteristicCallbacks {
 void MainTask(void *pparms) {
   // Watch for trigger, start sequence, wait for sequence to end.
   while (1) {
-    if (digitalRead(TriggerPin) == LOW) {
-      Sequence *psequence;
-      switch (TaskType) {
-        case Timer:
-          Serial.println("Starting timer");
-          psequence = new TimerSequence(xTaskGetCurrentTaskHandle(), TimerDuration);
-          break;
-
-        case Dice:
-          Serial.println("Starting dice");
-          psequence = new DiceSequence(xTaskGetCurrentTaskHandle());
-          break;
-
-        case Coin:
-          Serial.println("Starting coin");
-          psequence = new CoinSequence(xTaskGetCurrentTaskHandle());
-          break;
-      }
-      psequence->start();
-      xTaskNotifyWait(0, 0, NULL, portMAX_DELAY);
-      Serial.println("Sequence complete");
-    }
-
     taskYIELD();
   }
 }
@@ -77,6 +67,9 @@ void setup() {
   Serial.begin(115200);
   Serial.println();
   Serial.println("Starting");
+
+  Output.begin();
+  showIdle();
 
   nvs_flash_init();
   nvs_open("dice", NVS_READWRITE, &nvsHandle);
@@ -103,8 +96,8 @@ void setup() {
   ptask_type->setCallbacks(&TaskTypeCallbacks);
 
   ptimer_duration = pservice->createCharacteristic(TIMER_DURATION_UUID);
-  ptask_type->setValue(TimerDuration);
-  ptask_type->setCallbacks(&TimerDurationCallbacks);
+  ptimer_duration->setValue(TimerDuration);
+  ptimer_duration->setCallbacks(&TimerDurationCallbacks);
 
   pservice->start();
 
@@ -112,8 +105,30 @@ void setup() {
   pAdvertising->addServiceUUID(SERVICE_UUID);
   pAdvertising->start();
 
-  xTaskCreatePinnedToCore(MainTask, "MainTask", 8192, NULL, 1, NULL, APP_CPU_NUM);
+  // xTaskCreatePinnedToCore(MainTask, "MainTask", 8192, NULL, 1, NULL, APP_CPU_NUM);
 }
 
 void loop() {
+  if (digitalRead(TriggerPin) == HIGH) {
+    Sequence *psequence;
+    switch (TaskType) {
+      case Timer:
+        Serial.println("Starting timer");
+        psequence = new TimerSequence(xTaskGetCurrentTaskHandle(), TimerDuration);
+        break;
+
+      case Dice:
+        Serial.println("Starting dice");
+        psequence = new DiceSequence(xTaskGetCurrentTaskHandle());
+        break;
+
+      case Coin:
+        Serial.println("Starting coin");
+        psequence = new CoinSequence(xTaskGetCurrentTaskHandle());
+        break;
+    }
+    psequence->start();
+    xTaskNotifyWait(0, 0, NULL, portMAX_DELAY);
+    Serial.println("Sequence complete");
+  }
 }

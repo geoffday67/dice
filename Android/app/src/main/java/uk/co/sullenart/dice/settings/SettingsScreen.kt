@@ -33,9 +33,11 @@ import uk.co.sullenart.dice.Config
 @Composable
 fun SettingsScreen(
     options: List<Config>,
-    onSave: (Config) -> Unit,
+    currentOption: Config,
+    onSelect: (Config) -> Unit,
+    onSave: () -> Unit,
+    onDurationChange: (Int) -> Unit,
 ) {
-    var currentOptionId by remember { mutableIntStateOf(0) }
     var saveNeeded by remember { mutableStateOf(false) }
 
     Column {
@@ -43,17 +45,24 @@ fun SettingsScreen(
         options.forEach {
             Option(
                 option = it,
-                isSelected = it.id == (currentOptionId),
+                isSelected = it.id == currentOption.id,
                 onSelect = {
-                    currentOptionId = it.id
+                    onSelect(it)
                     saveNeeded = true
                 },
             )
             when (it) {
-                is Config.Timer -> TimerExtras(it) {
-                    saveNeeded = true
+                is Config.Timer -> {
+                    TimerExtras(
+                        initialValue = it.duration.toString(),
+                        onValueChange = { value ->
+                            value.toIntOrNull()?.let { valid ->
+                                onDurationChange(valid)
+                            }
+                            saveNeeded = true
+                        }
+                    )
                 }
-
                 else -> Unit
             }
             Divider()
@@ -65,7 +74,10 @@ fun SettingsScreen(
             horizontalArrangement = Arrangement.Center,
         ) {
             Button(
-                onClick = { onSave(Config.Dice) },
+                onClick = {
+                    onSave()
+                    saveNeeded = false
+                },
                 enabled = saveNeeded,
             ) {
                 Text(
@@ -106,10 +118,10 @@ private fun Option(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TimerExtras(
-    timer: Config.Timer,
+    initialValue: String,
     onValueChange: (String) -> Unit,
 ) {
-    var duration by remember { mutableStateOf(timer.duration.toString()) }
+    var value by remember { mutableStateOf(initialValue) }
 
     Row(
         modifier = Modifier
@@ -119,9 +131,9 @@ private fun TimerExtras(
         horizontalArrangement = Arrangement.End,
     ) {
         TextField(
-            value = duration,
+            value = value,
             onValueChange = {
-                duration = it
+                value = it
                 onValueChange(it)
             },
             textStyle = MaterialTheme.typography.titleMedium,
@@ -135,15 +147,4 @@ private fun TimerExtras(
             singleLine = true,
         )
     }
-}
-
-@Preview
-@Composable
-fun SettingsPreview() {
-    SettingsScreen(
-        options = listOf(
-            Config.Dice, Config.Timer(3), Config.Coin,
-        ),
-        onSave = {},
-    )
 }

@@ -1,9 +1,11 @@
 #include "coin.h"
 
+#include "../output.h"
+#include "esp_random.h"
 #include "freertos/task.h"
 
 CoinSequence::CoinSequence(TaskHandle_t task) : Sequence(task) {
-  heads = true;
+  heads = (esp_random() % 2) == 1;
 }
 
 void CoinSequence::start() {
@@ -14,17 +16,21 @@ void CoinSequence::TaskCode(void *pparams) {
   int n;
   CoinSequence *pthis = (CoinSequence *)pparams;
 
+  Output.setFont(DICE);
+
   for (n = 0; n < 5; n++) {
     Serial.println("Heads");
-    vTaskDelay(200);
+    Output.drawCentre('H');
+    vTaskDelay(80);
     Serial.println("Tails");
-    vTaskDelay(200);
+    Output.drawCentre('T');
+    vTaskDelay(80);
   }
 
   if (pthis->heads) {
-    Serial.println("Finished on heads");
+    Output.drawCentre('H');
   } else {
-    Serial.println("Finished on tails");
+    Output.drawCentre('T');
   }
 
   pthis->complete();

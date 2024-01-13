@@ -2,10 +2,11 @@
 
 class DiceSequence : public Sequence {
  public:
-  DiceSequence(TaskHandle_t);
+  DiceSequence(TaskHandle_t task);
   void start();
 
  private:
   static void TaskCode(void*);
-  int maximum, target;
+  int target;
+  void showNumber(int);
 };

@@ -13,6 +13,7 @@ import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.os.Build
 import android.os.ParcelUuid
+import androidx.compose.runtime.currentComposer
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -28,19 +29,15 @@ class SettingsViewModel(
 ) : ViewModel() {
     var connectionState by mutableStateOf(ConnectionState.DISCONNECTED)
 
-    // Available options.
     val options = mutableStateListOf(
         Config.Dice, Config.Timer(10), Config.Coin,
     )
-
-    var initialOptionId: Int? = null
+    var currentOption: Config by mutableStateOf(Config.Dice)
 
     private val adapter = context.getSystemService(BluetoothManager::class.java).adapter
     private val scanResultHandler = ScanResultHandler()
     private var diceGatt: BluetoothGatt? by mutableStateOf(null)
-
     private var foundServer = false
-    private var knownCharacteristics = 0
 
     private val gattHandler = object : BluetoothGattCallback() {
         override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray, status: Int) {
@@ -48,29 +45,47 @@ class SettingsViewModel(
                 when (characteristic.uuid) {
                     TASK_TYPE_UUID -> {
                         val result = value[0].toInt()
-                        Timber.d("Task type characteristic value [$result]")
-                        initialOptionId = result
+                        currentOption = options.first { it.id == result }
+                        Timber.d("Task type characteristic read [$result], initial option [${currentOption.name}]")
+                        gatt.readCharacteristic(gatt.getService(SERVICE_UUID).getCharacteristic(TIMER_DURATION_UUID))
                     }
 
                     TIMER_DURATION_UUID -> {
-                        val result = value[0].toInt()
-                        Timber.d("Timer duration characteristic value [$result]")
+                        val result = (value[1] * 256) + value[0]
+                        Timber.d("Timer duration characteristic read [$result]")
                         options
                             .filterIsInstance<Config.Timer>()
-                            .toMutableList()
-                            .replaceAll { it.copy(duration = result) }
+                            .forEach { it.duration = result }
+                        connectionState = ConnectionState.CONNECTED
                     }
                 }
-
-                if (++knownCharacteristics == settingsCharacteristics.size) {
-                    connectionState = ConnectionState.CONNECTED
-                }
+            } else {
+                Timber.w("Error $status during characteristic read")
             }
         }
 
         override fun onCharacteristicWrite(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                Timber.d("Characteristic written [${characteristic.uuid}]")
+                when (characteristic.uuid) {
+                    TASK_TYPE_UUID -> {
+                        Timber.d("Task type characteristic written [${characteristic.uuid}]")
+                        (currentOption as? Config.Timer)?.let { option ->
+                            val duration = option.duration
+                            Timber.d("Saving timer option duration [$duration]")
+                            writeCharacteristic(
+                                gatt = gatt,
+                                characteristic = gatt.getService(SERVICE_UUID).getCharacteristic(TIMER_DURATION_UUID),
+                                value = arrayOf((duration % 256).toByte(), (duration / 256).toByte()),
+                            )
+                        }
+                    }
+
+                    TIMER_DURATION_UUID -> {
+                        Timber.d("Timer duration characteristic written [${characteristic.uuid}]")
+                    }
+                }
+            } else {
+                Timber.w("Error $status during characteristic write")
             }
         }
 
@@ -92,13 +107,7 @@ class SettingsViewModel(
 
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             Timber.d("${gatt.services.size} services discovered")
-            gatt.services
-                .flatMap { it.characteristics }
-                .filter { it.uuid in setOf(TASK_TYPE_UUID, TIMER_DURATION_UUID) }
-                .forEach {
-                    Timber.d("Characteristic discovered [${it.uuid}]")
-                    gatt.readCharacteristic(it)
-                }
+            gatt.readCharacteristic(gatt.getService(SERVICE_UUID).getCharacteristic(TASK_TYPE_UUID))
         }
     }
 
@@ -115,7 +124,6 @@ class SettingsViewModel(
 
     fun connect() {
         foundServer = false
-        knownCharacteristics = 0
         connectionState = ConnectionState.CONNECTING
 
         val filter = ScanFilter.Builder()
@@ -128,20 +136,35 @@ class SettingsViewModel(
         )
     }
 
-    fun onSelect(option: Config) {
+    private fun writeCharacteristic(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: Array<Byte>) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            gatt.writeCharacteristic(characteristic, value.toByteArray(), BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+        } else {
+            characteristic.setValue(value.toByteArray())
+            gatt.writeCharacteristic(characteristic)
+        }
     }
 
-    fun onSave(option: Config) {
-        diceGatt?.let {
-            val service = it.getService(SERVICE_UUID)
-            val characteristic = service.getCharacteristic(TASK_TYPE_UUID)
+    fun onSelect(option: Config) {
+        Timber.d("Setting current option to [${option.name}]")
+        currentOption = option
+    }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                it.writeCharacteristic(characteristic, ByteArray(1) { option.id.toByte() }, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
-            } else {
-                characteristic.setValue(ByteArray(1) { option.id.toByte() })
-                it.writeCharacteristic(characteristic)
-            }
+    fun onDurationChange(duration: Int) {
+        Timber.d("Setting timer duration to [$duration]")
+        options
+            .filterIsInstance<Config.Timer>()
+            .forEach { it.duration = duration }
+    }
+
+    fun onSave() {
+        diceGatt?.let { gatt ->
+            Timber.d("Saving current option [${currentOption.name}]")
+            writeCharacteristic(
+                gatt = gatt,
+                characteristic = gatt.getService(SERVICE_UUID).getCharacteristic(TASK_TYPE_UUID),
+                value = arrayOf(currentOption.id.toByte() ?: 0),
+            )
         }
     }
 
@@ -149,6 +172,5 @@ class SettingsViewModel(
         private val SERVICE_UUID = UUID.fromString("0220702e-0895-47cc-bb35-d2df06d17041")
         private val TASK_TYPE_UUID = UUID.fromString("bd37f3bf-8f79-42ba-8532-fbd0140c2790")
         private val TIMER_DURATION_UUID = UUID.fromString("4a89e16b-c11a-471f-9b07-cfe736837e47")
-        private val settingsCharacteristics = setOf(TASK_TYPE_UUID, TIMER_DURATION_UUID)
     }
 }
