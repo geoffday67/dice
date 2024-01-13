@@ -5,6 +5,7 @@
 #include "freertos/task.h"
 
 DiceSequence::DiceSequence(TaskHandle_t task) : Sequence(task) {
+  retainDisplay = true;
   target = (esp_random() % 6) + 1;
 }
 

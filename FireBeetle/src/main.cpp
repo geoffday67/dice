@@ -6,9 +6,12 @@
 #include "nvs_flash.h"
 #include "output.h"
 #include "sequence/coin.h"
+#include "sequence/config.h"
 #include "sequence/dice.h"
 #include "sequence/timer.h"
 
+const EventBits_t ConfigBit = 0x02;
+const EventBits_t TriggerBit = 0x01;
 const int TriggerPin = 23;
 
 const char SERVICE_UUID[] = "0220702e-0895-47cc-bb35-d2df06d17041";
@@ -24,6 +27,8 @@ enum TaskType_t {
 TaskType_t TaskType;
 uint16_t TimerDuration;
 nvs_handle_t nvsHandle;
+TaskHandle_t mainTask;
+EventGroupHandle_t diceEventGroup;
 
 void showIdle() {
   Output.setFont(DICE);
@@ -35,12 +40,9 @@ class : public NimBLECharacteristicCallbacks {
     TaskType = (TaskType_t)(pcharacteristic->getValue<uint8_t>());
     nvs_set_u8(nvsHandle, "task_type", (uint8_t)TaskType);
 
-    Output.setFont(DICE);
-    Output.drawCentre('A');
-    vTaskDelay(500);
-    showIdle();
-
     Serial.printf("Task type now %d\n", (int)TaskType);
+
+    xEventGroupSetBits(diceEventGroup, ConfigBit);
   }
 } TaskTypeCallbacks;
 
@@ -52,10 +54,62 @@ class : public NimBLECharacteristicCallbacks {
   }
 } TimerDurationCallbacks;
 
+void IRAM_ATTR TriggerISR() {
+  xEventGroupSetBitsFromISR(diceEventGroup, TriggerBit, NULL);
+}
+
 void MainTask(void *pparms) {
-  // Watch for trigger, start sequence, wait for sequence to end.
+  bool first, retain;
+  Sequence *psequence;
+  EventBits_t bits;
+
+  retain = false;
+  first = true;
+
   while (1) {
-    taskYIELD();
+    xEventGroupClearBits(diceEventGroup, TriggerBit | ConfigBit);
+    bits = xEventGroupWaitBits(diceEventGroup, TriggerBit | ConfigBit, pdTRUE, pdFALSE, pdMS_TO_TICKS(500));
+    if (bits == 0) {
+      // We timed out waiting, update the display if we're not retaining it after the last sequence.
+      if (!retain) {
+        Output.setFont(DICE);
+        if (first) {
+          Output.drawCentre('I');
+        } else {
+          Output.drawCentre('J');
+        }
+        first = !first;
+      }
+      continue;
+    }
+
+    if ((bits & ConfigBit) != 0) {
+      // The config was updated via BLE, start the config confirmation sequence.
+      Serial.println("Starting config");
+      psequence = new ConfigSequence(xTaskGetCurrentTaskHandle());
+    } else {
+      switch (TaskType) {
+        case Timer:
+          Serial.println("Starting timer");
+          psequence = new TimerSequence(xTaskGetCurrentTaskHandle(), TimerDuration);
+          break;
+
+        case Dice:
+          Serial.println("Starting dice");
+          psequence = new DiceSequence(xTaskGetCurrentTaskHandle());
+          break;
+
+        case Coin:
+          Serial.println("Starting coin");
+          psequence = new CoinSequence(xTaskGetCurrentTaskHandle());
+          break;
+      }
+    }
+
+    psequence->start();
+    xTaskNotifyWait(0, 0, NULL, portMAX_DELAY);
+    retain = psequence->retainDisplay;
+    Serial.println("Sequence complete");
   }
 }
 
@@ -68,8 +122,11 @@ void setup() {
   Serial.println();
   Serial.println("Starting");
 
+  diceEventGroup = xEventGroupCreate();
+
   Output.begin();
-  showIdle();
+
+  xTaskCreatePinnedToCore(MainTask, "MainTask", 8192, NULL, 1, &mainTask, APP_CPU_NUM);
 
   nvs_flash_init();
   nvs_open("dice", NVS_READWRITE, &nvsHandle);
@@ -84,8 +141,6 @@ void setup() {
     TimerDuration = 10;
   }
   Serial.printf("Timer duration %d restored\n", TimerDuration);
-
-  pinMode(TriggerPin, INPUT_PULLUP);
 
   NimBLEDevice::init("Dice");
   pserver = NimBLEDevice::createServer();
@@ -105,30 +160,10 @@ void setup() {
   pAdvertising->addServiceUUID(SERVICE_UUID);
   pAdvertising->start();
 
-  // xTaskCreatePinnedToCore(MainTask, "MainTask", 8192, NULL, 1, NULL, APP_CPU_NUM);
+  pinMode(TriggerPin, INPUT_PULLUP);
+  attachInterrupt(TriggerPin, TriggerISR, HIGH);
 }
 
 void loop() {
-  if (digitalRead(TriggerPin) == HIGH) {
-    Sequence *psequence;
-    switch (TaskType) {
-      case Timer:
-        Serial.println("Starting timer");
-        psequence = new TimerSequence(xTaskGetCurrentTaskHandle(), TimerDuration);
-        break;
-
-      case Dice:
-        Serial.println("Starting dice");
-        psequence = new DiceSequence(xTaskGetCurrentTaskHandle());
-        break;
-
-      case Coin:
-        Serial.println("Starting coin");
-        psequence = new CoinSequence(xTaskGetCurrentTaskHandle());
-        break;
-    }
-    psequence->start();
-    xTaskNotifyWait(0, 0, NULL, portMAX_DELAY);
-    Serial.println("Sequence complete");
-  }
+  taskYIELD();
 }

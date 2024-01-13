@@ -8,6 +8,7 @@ class Sequence {
  public:
   Sequence(TaskHandle_t task) : listeningTask(task) {}
   virtual void start();
+  bool retainDisplay;
 
  private:
   TaskHandle_t listeningTask;

@@ -4,6 +4,7 @@
 #include "freertos/task.h"
 
 TimerSequence::TimerSequence(TaskHandle_t task, int duration) : Sequence(task) {
+  retainDisplay = false;
   this->duration = duration;
 }
 

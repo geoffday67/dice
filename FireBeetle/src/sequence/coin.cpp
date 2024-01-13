@@ -5,6 +5,7 @@
 #include "freertos/task.h"
 
 CoinSequence::CoinSequence(TaskHandle_t task) : Sequence(task) {
+  retainDisplay = true;
   heads = (esp_random() % 2) == 1;
 }
 
@@ -19,10 +20,8 @@ void CoinSequence::TaskCode(void *pparams) {
   Output.setFont(DICE);
 
   for (n = 0; n < 5; n++) {
-    Serial.println("Heads");
     Output.drawCentre('H');
     vTaskDelay(80);
-    Serial.println("Tails");
     Output.drawCentre('T');
     vTaskDelay(80);
   }
